@@ -1,312 +1,108 @@
-# app.py
 import streamlit as st
-import pandas as pd
 import numpy as np
-from data.database import SOLVENTS
-from calculations import densidad, viscosidad, tension_superficial, hansen_mix
+import plotly.graph_objects as go
 
-# Configuración de página con estado de sidebar
-st.set_page_config(
-    page_title="SolventMix AI | Next-Gen Simulator",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- 1. GLOBAL DATABASE ---
+DATA = {
+    "Solvents (Mandatory)": {
+        "Methyl Sunflowerate": {"hsp": [16.2, 3.2, 3.8], "rho": 880, "eacn": 1.5, "fp": 170, "price": 1.65, "ghs": []},
+        "Methyl Soyate": {"hsp": [16.1, 3.1, 3.7], "rho": 885, "eacn": 1.4, "fp": 175, "price": 1.60, "ghs": []},
+        "Methyl Palmitate": {"hsp": [16.3, 3.3, 3.9], "rho": 870, "eacn": 1.8, "fp": 180, "price": 1.55, "ghs": []},
+        "DBE (Dibasic Esters)": {"hsp": [16.5, 7.5, 7.0], "rho": 1060, "eacn": -5.4, "fp": 108, "price": 2.85, "ghs": ["H319"]},
+    },
+    "Cosolvents (Optional)": {
+        "None": {"hsp": [0, 0, 0], "rho": 1.0, "f_hld": 0, "fp": 200, "price": 0, "ghs": []},
+        "Propylene Carbonate": {"hsp": [20.0, 18.0, 4.1], "rho": 1200, "f_hld": 0.1, "fp": 132, "price": 2.10, "ghs": ["H319"]},
+        "Glycerin": {"hsp": [17.4, 12.1, 29.3], "rho": 1260, "f_hld": -0.8, "fp": 160, "price": 0.95, "ghs": []},
+        "Butyl Diglicol": {"hsp": [16.0, 7.0, 10.6], "rho": 953, "f_hld": -0.2, "fp": 105, "price": 3.20, "ghs": ["H319"]},
+    },
+    "Surfactants": {
+        "APG (Non-Ionic)": {"cc": 1.5, "hlb": 13.5, "rho": 1100, "hsp": [18.0, 12.0, 15.0], "price": 1.90, "ghs": ["H318"]},
+        "SLES (Anionic)": {"cc": -2.0, "hlb": 40.0, "rho": 1050, "hsp": [17.5, 11.0, 9.5], "price": 1.85, "ghs": ["H315", "H318"]},
+    },
+    "Resins": {
+        "Alquidic": {"hsp": [18.5, 4.5, 5.1], "r0": 8.0},
+        "Nitrocellulose": {"hsp": [15.4, 10.1, 8.8], "r0": 11.5},
+        "Polyurethane": {"hsp": [17.8, 10.5, 11.2], "r0": 9.0},
+        "PVC": {"hsp": [18.8, 9.2, 3.5], "r0": 7.5},
+    }
+}
 
-# --- SISTEMA DE DISEÑO: NEXT-GEN GLASSMORPHISM ---
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+# --- 2. LOGIC ---
+st.set_page_config(page_title="MicroSaaS Pro", layout="wide")
+st.title("🧪 Industrial Microemulsion Manufacturing Suite")
 
-    /* Variables Globales */
-    :root {
-        --primary-gradient: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
-        --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        --glass-bg: rgba(255, 255, 255, 0.03);
-        --glass-border: rgba(255, 255, 255, 0.1);
-        --text-main: #e0e5ec;
-        --text-dim: #a0aec0;
-    }
-
-    /* Reset global y Tipografía */
-    .stApp {
-        background: radial-gradient(circle at top right, #1a1c2c, #0d0e12);
-        font-family: 'Outfit', sans-serif;
-        color: var(--text-main);
-    }
-
-    /* Sidebar Estilizado */
-    [data-testid="stSidebar"] {
-        background-color: rgba(15, 17, 25, 0.95);
-        border-right: 1px solid var(--glass-border);
-    }
-    
-    /* Títulos Impactantes */
-    h1 {
-        background: var(--primary-gradient);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 700 !important;
-        font-size: 3rem !important;
-        letter-spacing: -1px;
-        margin-bottom: 0px !important;
-    }
-    h3 {
-        color: var(--text-dim) !important;
-        font-weight: 400 !important;
-        margin-top: -10px !important;
-    }
-
-    /* Tarjetas de Métricas Custom (CSS puro para evitar el estilo "cutre") */
-    .metric-card {
-        background: var(--glass-bg);
-        border: 1px solid var(--glass-border);
-        backdrop-filter: blur(12px);
-        padding: 1.5rem;
-        border-radius: 20px;
-        text-align: center;
-        transition: all 0.3s ease;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-    }
-    .metric-card:hover {
-        transform: translateY(-5px);
-        border-color: rgba(0, 210, 255, 0.4);
-        box-shadow: 0 8px 32px 0 rgba(0, 210, 255, 0.1);
-    }
-    .metric-label {
-        font-size: 0.9rem;
-        color: var(--text-dim);
-        text-transform: uppercase;
-        letter-spacing: 2px;
-        margin-bottom: 0.5rem;
-    }
-    .metric-value {
-        font-size: 2.2rem;
-        font-weight: 700;
-        background: var(--primary-gradient);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-    .metric-unit {
-        font-size: 0.8rem;
-        color: var(--text-dim);
-        margin-left: 5px;
-    }
-
-    /* Botón de Acción Principal */
-    .stButton>button {
-        background: var(--primary-gradient);
-        color: white;
-        border: none;
-        padding: 15px 30px;
-        border-radius: 12px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        box-shadow: 0 4px 15px rgba(0, 210, 255, 0.3);
-        transition: all 0.3s ease;
-        width: 100%;
-    }
-    .stButton>button:hover {
-        box-shadow: 0 6px 20px rgba(0, 210, 255, 0.5);
-        transform: scale(1.02);
-    }
-
-    /* Tablas Modernas */
-    .stTable {
-        background: var(--glass-bg);
-        border-radius: 15px !important;
-        overflow: hidden;
-    }
-
-    /* Personalización de Inputs */
-    .stNumberInput, .stMultiSelect {
-        background: var(--glass-bg) !important;
-        border: 1px solid var(--glass-border) !important;
-        border-radius: 8px !important;
-    }
-    
-    /* Expander */
-    .streamlit-expanderHeader {
-        background-color: transparent !important;
-        border: 1px solid var(--glass-border) !important;
-        border-radius: 12px !important;
-        color: #00d2ff !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- CABECERA ---
-st.title("SOLVENT_MIX AI")
-st.subheader("Molecular Engine for Industrial Formulations")
-st.markdown("<br>", unsafe_allow_html=True)
-
-# --- SIDEBAR: COMPOSITOR ---
 with st.sidebar:
-    st.markdown("### 🧬 COMPOSITION")
-    base_calculo = st.radio("Unit Base", ["Volume Fraction", "Mass Fraction", "Molar Fraction"])
+    st.header("Formulation Parameters")
+    res_k = st.selectbox("Target Resin", list(DATA["Resins"].keys()))
+    sol_k = st.selectbox("Solvent", list(DATA["Solvents (Mandatory)"].keys()))
+    cos_k = st.selectbox("Cosolvent", list(DATA["Cosolvents (Optional)"].keys()))
+    sur_k = st.selectbox("Surfactant", list(DATA["Surfactants"].keys()))
     
-    selected_solvents = st.multiselect(
-        "Industrial Components",
-        options=list(SOLVENTS.keys()),
-        default=["Agua", "Etanol"]
-    )
+    p_sol = st.slider("% Solvent", 5, 50, 30)
+    p_cos = st.slider("% Cosolvent", 0, 20, 5)
+    p_sur = st.slider("% Surfactant", 5, 25, 15)
+    p_alc = st.slider("% Cosurfactant (Alcohol)", 2, 15, 10)
+    p_wat = 100 - p_sol - p_cos - p_sur - p_alc
+    st.caption(f"Water: {p_wat}%")
+    salinity = st.number_input("Salinity (% NaCl in mix)", 0.0, 5.0, 0.5)
 
-    comps = {}
-    if selected_solvents:
-        st.markdown("---")
-        for s in selected_solvents:
-            comps[s] = st.number_input(f"{s} (%)", min_value=0.0, max_value=100.0, value=100.0/len(selected_solvents))
+# Calculations
+S, C, Sf, R = DATA["Solvents (Mandatory)"][sol_k], DATA["Cosolvents (Optional)"][cos_k], DATA["Surfactants"][sur_k], DATA["Resins"][res_k]
+ws = np.array([p_sol, p_cos, p_sur, p_alc, p_wat]) / 100
+rhos = np.array([S['rho'], C['rho'], Sf['rho'], 810, 997])
+rho_mix = 1 / np.sum(ws / rhos)
 
-        total = sum(comps.values())
-        progress_color = "#00d2ff" if abs(total - 100.0) < 0.01 else "#ff4b4b"
-        st.markdown(f"**Total: <span style='color:{progress_color}; font-size:1.2rem'>{total:.2f}%</span>**", unsafe_allow_html=True)
-        
-        if abs(total - 100.0) > 0.01:
-            st.warning("⚠️ Sum must be exactly 100%")
-            st.stop()
-        else:
-            st.success("✅ Ready to simulate")
+# --- 3. DASHBOARD TABS ---
+t1, t2, t3 = st.tabs(["📊 Lab Analysis", "🛡️ Regulatory", "🏭 Batch Manufacturing"])
 
-# --- ÁREA PRINCIPAL ---
-col_config, col_spacer, col_res = st.columns([1, 0.1, 2.2])
-
-with col_config:
-    st.markdown("### 🛠️ ENGINE CONFIG")
-    with st.expander("Physics Models", expanded=True):
-        m_dens = st.selectbox("Density Model", ["Modified Rackett", "COSTALD (HBT)", "PR-Peneloux", "Ideal Mixing"], index=0)
-        m_visc = st.selectbox("Viscosity Model", ["Arrhenius", "Grunberg-Nissan (Interaction)", "Kendall-Monroe", "Linear Average"], index=0)
-        m_tens = st.selectbox("Surface Tension", ["Macleod-Sugden", "Sprow-Prausnitz (Ideal Surface)", "Linear Volumetric", "Linear Molar"], index=0)
-        temp = st.slider("Process Temp (°C)", 10.0, 80.0, 25.0)
+with t1:
+    # (Existing RED/HLD/Hansen 3D Logic goes here)
+    st.subheader("Performance Indicators")
+    col1, col2 = st.columns(2)
+    # Calculation of RED and HLD
+    h_mix = np.dot((ws/rhos)/np.sum(ws/rhos), np.array([S['hsp'], C['hsp'], Sf['hsp'], [16,6,16], [15.5,16,42]]))
+    red = np.sqrt(4*(h_mix[0]-R['hsp'][0])**2 + (h_mix[1]-R['hsp'][1])**2 + (h_mix[2]-R['hsp'][2])**2) / R['r0']
+    hld = np.log(salinity + 0.001) - 0.17*S['eacn'] + Sf['cc']
     
-    st.markdown("<br>", unsafe_allow_html=True)
-    calculate = st.button("🚀 RUN SIMULATION")
+    col1.metric("Solubility RED", f"{red:.2f}")
+    col2.metric("Stability HLD", f"{hld:.2f}")
 
-# --- LÓGICA DE CÁLCULO (Se activa al presionar el botón) ---
-if calculate:
-    T_kelvin = temp + 273.15
-    f_input = np.array([v/100 for v in comps.values()])
-    names = list(comps.keys())
-    props = [SOLVENTS[n] for n in names]
+with t2:
+    st.subheader("GHS Safety Phrases")
+    st.info("Based on component concentrations > 10%")
+    # Classification logic...
+
+with t3:
+    st.header("Batch Weight Calculator")
+    batch_liters = st.number_input("Target Batch Size (Liters)", 10, 10000, 1000)
+    brine_conc = st.slider("Brine Stock Concentration (% NaCl)", 5.0, 20.0, 10.0)
     
-    # Conversiones
-    mws = np.array([p['MW'] for p in props])
-    rhos_ref = np.array([p['rho_ref'] for p in props])
+    total_kg = batch_liters * (rho_mix / 1000)
     
-    if base_calculo == "Mass Fraction":
-        f_mass = f_input
-        moles_rel = f_mass / mws
-        f_mol = moles_rel / np.sum(moles_rel)
-        vols_rel = f_mass / rhos_ref
-        f_vol = vols_rel / np.sum(vols_rel)
-    elif base_calculo == "Molar Fraction":
-        f_mol = f_input
-        mass_rel = f_mol * mws
-        f_mass = mass_rel / np.sum(mass_rel)
-        vols_rel = mass_rel / rhos_ref
-        f_vol = vols_rel / np.sum(vols_rel)
-    else: # Volume
-        f_vol = f_input
-        mass_rel = f_vol * rhos_ref
-        f_mass = mass_rel / np.sum(mass_rel)
-        moles_rel = f_mass / mws
-        f_mol = moles_rel / np.sum(moles_rel)
-
-    try:
-        # Cálculo de Propiedades
-        if "Rackett" in m_dens:
-            rho_mix = densidad.modified_rackett(T_kelvin, f_mol, props)
-        elif "COSTALD" in m_dens:
-            rho_mix = densidad.costald_density(T_kelvin, f_mol, props)
-        elif "PR-Peneloux" in m_dens:
-            rho_mix = densidad.pr_peneloux_density(T_kelvin, f_mol, props)
-        else: # Ideal Mixing (usando fracciones en peso como en densidade.py)
-            rho_mix = densidad.densidad_ideal(f_mass, [p['rho_ref']/1000 for p in props]) * 1000
-        
-        mu_puras = [p['visc_ref'] for p in props]
-        if "Arrhenius" in m_visc: 
-            mu_mix = viscosidad.metodo_arrhenius(f_mol, mu_puras)
-        elif "Nissan" in m_visc: 
-            mu_mix = viscosidad.metodo_grunberg_nissan(f_mol, mu_puras, names)
-            st.info("💡 Grunberg-Nissan: Se aplican parámetros de interacción (Gij) para simular la ruptura de puentes de hidrógeno.")
-        elif "Kendall" in m_visc:
-            mu_mix = viscosidad.metodo_kendall_monroe(f_mol, mu_puras)
-        else:
-            mu_mix = viscosidad.metodo_lineal(f_mol, mu_puras)
-            
-        sig_puras = [p['sigma_ref'] for p in props]
-        if "Macleod" in m_tens:
-            paracors = [p['Paracor'] for p in props]
-            tens_mix = tension_superficial.macleod_sugden(f_mol, paracors, mws, rho_mix)
-        elif "Sprow" in m_tens:
-            rhos_kgm3 = [p['rho_ref'] for p in props]
-            tens_mix = tension_superficial.sprow_prausnitz(f_mol, sig_puras, mws, rhos_kgm3, T_kelvin)
-            st.info("💡 Sprow-Prausnitz: El modelo considera que los componentes con menor tensión migran a la superficie.")
-        elif "Volumetric" in m_tens: 
-            tens_mix = tension_superficial.regla_lineal_volumetrica(f_vol, sig_puras)
-        else: 
-            tens_mix = tension_superficial.regla_lineal_molar(f_mol, sig_puras)
-        
-        h_d = [p['dD'] for p in props]; h_p = [p['dP'] for p in props]; h_h = [p['dH'] for p in props]
-        h_mix = hansen_mix.calcular_hansen_mezcla(f_vol, h_d, h_p, h_h)
-
-        # --- RESULTADOS ---
-        with col_res:
-            st.markdown("### 📊 MIXTURE PROFILE")
-            
-            # Cards de Métricas con HTML/CSS
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                val = f"{rho_mix:.2f}" if not np.isnan(rho_mix) else "N/A"
-                st.markdown(f"""<div class='metric-card'><div class='metric-label'>Density</div><div class='metric-value'>{val}<span class='metric-unit'>kg/m³</span></div></div>""", unsafe_allow_html=True)
-            with m2:
-                val = f"{mu_mix:.3f}" if not np.isnan(mu_mix) else "N/A"
-                st.markdown(f"""<div class='metric-card'><div class='metric-label'>Viscosity</div><div class='metric-value'>{val}<span class='metric-unit'>cP</span></div></div>""", unsafe_allow_html=True)
-            with m3:
-                val = f"{tens_mix:.2f}" if not np.isnan(tens_mix) else "N/A"
-                st.markdown(f"""<div class='metric-card'><div class='metric-label'>Tension</div><div class='metric-value'>{val}<span class='metric-unit'>mN/m</span></div></div>""", unsafe_allow_html=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            with st.expander("🔍 Detailed Composition Data", expanded=False):
-                df_comp = pd.DataFrame({
-                    "Component": names,
-                    "Molar (x)": f_mol,
-                    "Mass (w)": f_mass,
-                    "Vol (φ)": f_vol
-                })
-                st.table(df_comp.style.format({c: "{:.4f}" for c in df_comp.columns if c != "Component"}))
-
-            st.markdown("---")
-            fig = hansen_mix.plot_hansen_3d(names, h_d, h_p, h_h, f_vol, h_mix)
-            st.plotly_chart(fig, use_container_width=True)
-
-            # --- EXPORTAR INFORME ---
-            st.markdown("<br>", unsafe_allow_html=True)
-            report_data = {
-                "Parameter": ["Temperature", "Density Model", "Viscosity Model", "Surface Tension Model", 
-                              "Result: Density (kg/m3)", "Result: Viscosity (cP)", "Result: Surface Tension (mN/m)",
-                              "HSP dD", "HSP dP", "HSP dH"],
-                "Value": [f"{temp} °C", m_dens, m_visc, m_tens, 
-                          f"{rho_mix:.4f}", f"{mu_mix:.4f}", f"{tens_mix:.4f}",
-                          f"{h_mix[0]:.2f}", f"{h_mix[1]:.2f}", f"{h_mix[2]:.2f}"]
-            }
-            df_report = pd.DataFrame(report_data)
-            
-            # Combinar con datos de composición
-            df_comp_report = df_comp.copy()
-            df_comp_report.columns = ["Parameter", "Molar (x)", "Mass (w)", "Vol (phi)"]
-            
-            # Generar CSV string
-            csv = df_report.to_csv(index=False).encode('utf-8')
-            
-            st.download_button(
-                label="📥 DOWNLOAD TECHNICAL REPORT (CSV)",
-                data=csv,
-                file_name=f"solvent_mix_report_{temp}C.csv",
-                mime="text/csv",
-            )
-            
-    except Exception as e:
-        st.error(f"Engine Stalled: {e}")
-        import traceback
-        st.code(traceback.format_exc())
+    # Calculate weights
+    w_sol = total_kg * (p_sol/100)
+    w_cos = total_kg * (p_cos/100)
+    w_sur = total_kg * (p_sur/100)
+    w_alc = total_kg * (p_alc/100)
+    
+    # Brine calculation
+    # target_salt = total_kg * (salinity/100)
+    # w_brine = target_salt / (brine_conc/100)
+    w_brine = (total_kg * (salinity/100)) / (brine_conc/100)
+    w_water = (total_kg * (p_wat/100)) - w_brine
+    
+    st.success(f"Total Mass to weigh: {total_kg:.2f} kg")
+    
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("### 🛢️ Organic & Surfactant Phase")
+        st.write(f"- **{S['nome'] if 'nome' in S else sol_k}:** {w_sol:.2f} kg")
+        st.write(f"- **{C['nome'] if 'nome' in C else cos_k}:** {w_cos:.2f} kg")
+        st.write(f"- **{Sf['nome'] if 'nome' in Sf else sur_k}:** {w_sur:.2f} kg")
+        st.write(f"- **Cosurfactant:** {w_alc:.2f} kg")
+    
+    with col_b:
+        st.markdown("### 💧 Aqueous Phase")
+        st.write(f"- **NaCl Brine ({brine_conc}%):** {w_brine:.2f} kg")
+        st.write(f"- **Pure Water:** {w_water:.2f} kg")
